@@ -212,3 +212,29 @@ __marimo__/
 # Android Studio / IntelliJ
 .idea/
 *.iml
+
+# --- Week 1: Android + backend hygiene ---
+
+# macOS
+.DS_Store
+
+# Android Studio / Gradle
+android/**/.idea/
+android/**/.gradle/
+android/**/local.properties
+android/**/captures/
+android/**/build/
+android/**/app/build/
+
+# Keystores (never commit real keys)
+*.jks
+*.keystore
+
+# Python / backend
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/**/*.pyc
+
+# VSCode / editor
+.vscode/

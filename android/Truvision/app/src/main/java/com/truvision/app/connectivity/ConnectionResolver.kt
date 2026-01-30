@@ -1,5 +1,7 @@
+
 package com.truvision.app.connectivity
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -16,7 +18,9 @@ class ConnectionResolver(
 ) {
     suspend fun resolveUsbBaseUrl(): UsbResolveResult {
         val url = ConnectivityConstants.USB_BASE_URL + ConnectivityConstants.HEALTH_PATH
+        Log.d("ConnectionResolver", "Probing URL: $url")
         val code = probe(url)
+        Log.d("ConnectionResolver", "Probe result code=$code")
         return if (code != null && code in 200..299) {
             UsbResolveResult(
                 baseUrl = ConnectivityConstants.USB_BASE_URL,
@@ -43,6 +47,7 @@ class ConnectionResolver(
             conn.disconnect()
             code
         } catch (e: Exception) {
+            Log.e("ConnectionResolver", "Probe failed for $url", e)
             null
         }
     }
