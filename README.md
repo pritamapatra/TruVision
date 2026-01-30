@@ -1,10 +1,10 @@
 # TruVision
 ## Connectivity
 
-- Primary base URL (USB tether): http://192.168.42.42:8000
+- Primary base URL (USB tether): http://192.168.231.240:8000
 - Pi backend binds to 0.0.0.0:8000 so the same endpoints work over all interfaces.
 - The Android app performs a USB health check at:
-  - http://192.168.42.42:8000/health
+  - http://192.168.231.240:8000/health
 
 ### Advanced (debug only) – Override base URL
 
@@ -29,18 +29,18 @@ be used in production builds.
      uvicorn main:app --host 0.0.0.0 --port 8000
 
 4. Verify Pi /health from Pi  
-   curl -v http://192.168.42.42:8000/health
+   curl -v http://192.168.231.240:8000/health
    - Expect a 2xx HTTP status code.
 
 5. Enable USB tethering (phone → Pi)  
    - Connect phone to Pi via USB.  
    - On phone: enable USB tethering.  
-   - On Pi, confirm interface usb0 has IP 192.168.42.42/24.
+   - On Pi, confirm interface usb0 has IP 192.168.231.240/24.
 
 6. Test USB health from phone app  
    - Open TruVision app.  
    - On Connection screen, tap "Run USB health check" once.  
    - When backend is UP and tether ON:  
-     Status: Connected, Last HTTP code: 2xx, Base URL: http://192.168.42.42:8000  
+     Status: Connected, Last HTTP code: 2xx, Base URL: http://192.168.231.240:8000  
    - When backend is DOWN or tether OFF:  
      Status: Not connected, Last HTTP code: non-2xx or --, Base URL: --
