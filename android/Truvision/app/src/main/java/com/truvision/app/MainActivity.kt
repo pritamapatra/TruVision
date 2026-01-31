@@ -20,7 +20,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.truvision.app.ui.theme.TruVisionTheme
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import com.truvision.app.connectivity.ConnectionViewModel
+import com.truvision.app.visual.VisualViewModel
+import com.truvision.app.visual.CaptureState
+import com.truvision.app.results.ResultsViewModel
+import com.truvision.app.results.JobState
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
@@ -88,8 +93,12 @@ fun AppNavigation() {
             startDestination = "connection",
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable("results") { ResultsScreen() }
-            composable("visual") { VisualScreen() }
+            composable("results/{job_id}") { backStackEntry ->
+                val jobId = backStackEntry.arguments?.getString("job_id") ?: ""
+                ResultsScreen(jobId = jobId)
+            }
+            composable("results") { ResultsScreen(jobId = null) }
+            composable("visual") { VisualScreen(navController = navController) }
             composable("analysis") { AnalysisScreen() }
             composable("history") { HistoryScreen() }
             composable("settings") { SettingsScreen() }
@@ -99,15 +108,84 @@ fun AppNavigation() {
 }
 
 @Composable
-fun ResultsScreen() {
-    ScreenPlaceholder(title = "Results", content = "Detection results will be displayed here.")
+fun ResultsScreen(jobId: String?) {
+    val viewModel: ResultsViewModel = viewModel()
+    val jobState by viewModel.jobState.collectAsState()
+    
+    LaunchedEffect(jobId) {
+        if (jobId != null && jobId.isNotEmpty()) {
+            viewModel.startPolling(jobId)
+        }
+    }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("Results", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        if (jobId == null || jobId.isEmpty()) {
+            Text(
+                "No active job. Start a capture from Visual screen.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text("Job ID: ${jobState.jobId ?: jobId}", style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            when {
+                jobState.error != null -> {
+                    Text(
+                        "Error: ${jobState.error}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.retryPolling() }) {
+                        Text("Retry")
+                    }
+                }
+                jobState.isPolling -> {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Status: ${jobState.status}")
+                    Text("Polling for updates...", style = MaterialTheme.typography.bodySmall)
+                }
+                jobState.status == "completed" -> {
+                    Text("Status: Completed", color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Detected Count: ${jobState.detectedCount ?: 0}",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                }
+                else -> {
+                    Text("Status: ${jobState.status}")
+                }
+            }
+        }
+    }
 }
 
+
+
 @Composable
-fun VisualScreen() {
-    // Week 3: Visual capture flow planning
-    // Flow: Visual -> (tap Start Capture) -> navigate to Results -> poll job status
-    // No actual camera/microscope integration yet
+fun VisualScreen(navController: androidx.navigation.NavController) {
+    val viewModel: VisualViewModel = viewModel()
+    val captureState by viewModel.captureState.collectAsState()
+    
+    LaunchedEffect(captureState) {
+        if (captureState is CaptureState.Success) {
+            val jobId = (captureState as CaptureState.Success).jobId
+            navController.navigate("results/$jobId")
+            viewModel.resetState()
+        }
+    }
     
     Column(
         modifier = Modifier
@@ -119,42 +197,54 @@ fun VisualScreen() {
         Text("Visual Capture", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(24.dp))
         
-        Text(
-            "Planned Flow:",
-            style = MaterialTheme.typography.titleMedium
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("1. User taps 'Start Capture' button")
-            Text("2. App calls POST /capture/start")
-            Text("3. Receives job_id from Pi")
-            Text("4. Navigates to Results screen")
-            Text("5. Results screen polls GET /jobs/{id}")
-            Text("6. Shows status: running -> completed")
+        when (val state = captureState) {
+            is CaptureState.Idle -> {
+                Text(
+                    "Ready to capture microplastic sample",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+            is CaptureState.Starting -> {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Starting capture...")
+            }
+            is CaptureState.Error -> {
+                Text(
+                    state.message,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { viewModel.resetState() }) {
+                    Text("Dismiss")
+                }
+            }
+            is CaptureState.Success -> {
+                Text("Navigating to results...")
+            }
         }
         
         Spacer(modifier = Modifier.height(24.dp))
         
         Button(
-            onClick = { /* TODO: Week 4 - Implement capture start */ },
-            modifier = Modifier.fillMaxWidth(0.6f)
+            onClick = { viewModel.startCapture() },
+            modifier = Modifier.fillMaxWidth(0.6f),
+            enabled = captureState is CaptureState.Idle
         ) {
             Text("Start Capture")
         }
         
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         
         Text(
-            "Camera/microscope integration: Week 4+",
+            "Flow: Visual -> POST /capture/start -> Navigate to Results -> Poll job",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
+
 
 @Composable
 fun AnalysisScreen() {

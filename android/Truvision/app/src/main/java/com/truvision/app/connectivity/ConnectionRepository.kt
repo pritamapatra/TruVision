@@ -82,4 +82,18 @@ class ConnectionRepository(context: Context) {
             )
         }
     }
+
+    fun getCurrentBaseUrl(): String {
+        return if (overridePrefs.isOverrideEnabled()) {
+            overridePrefs.getOverrideUrl()
+        } else {
+            val lastIp = usbPrefs.getLastSuccessfulIp()
+            if (lastIp != null) {
+                "http://${lastIp}:8000"
+            } else {
+                "http://192.168.231.240:8000"
+            }
+        }
+    }
+
 }
