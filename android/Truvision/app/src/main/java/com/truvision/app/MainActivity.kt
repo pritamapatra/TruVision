@@ -17,7 +17,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.truvision.app.ui.theme.TruVisionTheme
+import androidx.compose.runtime.collectAsState
+import com.truvision.app.connectivity.ConnectionViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,16 +39,53 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation() {
     val navController = rememberNavController()
 
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("TruVision") }
             )
+        },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = currentRoute == "connection",
+                    onClick = { navController.navigate("connection") { launchSingleTop = true } },
+                    icon = { Text("📱") },
+                    label = { Text("Connect") }
+                )
+                NavigationBarItem(
+                    selected = currentRoute == "visual",
+                    onClick = { navController.navigate("visual") { launchSingleTop = true } },
+                    icon = { Text("📷") },
+                    label = { Text("Visual") }
+                )
+                NavigationBarItem(
+                    selected = currentRoute == "results",
+                    onClick = { navController.navigate("results") { launchSingleTop = true } },
+                    icon = { Text("📊") },
+                    label = { Text("Results") }
+                )
+                NavigationBarItem(
+                    selected = currentRoute == "history",
+                    onClick = { navController.navigate("history") { launchSingleTop = true } },
+                    icon = { Text("📜") },
+                    label = { Text("History") }
+                )
+                NavigationBarItem(
+                    selected = currentRoute == "settings",
+                    onClick = { navController.navigate("settings") { launchSingleTop = true } },
+                    icon = { Text("⚙️") },
+                    label = { Text("Settings") }
+                )
+            }
         }
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = "settings",
+            startDestination = "connection",
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("results") { ResultsScreen() }
@@ -64,7 +105,55 @@ fun ResultsScreen() {
 
 @Composable
 fun VisualScreen() {
-    ScreenPlaceholder(title = "Visual", content = "Visual capture interface will be here.")
+    // Week 3: Visual capture flow planning
+    // Flow: Visual -> (tap Start Capture) -> navigate to Results -> poll job status
+    // No actual camera/microscope integration yet
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("Visual Capture", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Text(
+            "Planned Flow:",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("1. User taps 'Start Capture' button")
+            Text("2. App calls POST /capture/start")
+            Text("3. Receives job_id from Pi")
+            Text("4. Navigates to Results screen")
+            Text("5. Results screen polls GET /jobs/{id}")
+            Text("6. Shows status: running -> completed")
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Button(
+            onClick = { /* TODO: Week 4 - Implement capture start */ },
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Text("Start Capture")
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            "Camera/microscope integration: Week 4+",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 @Composable
@@ -133,16 +222,9 @@ fun SettingsScreen() {
 }
 @Composable
 fun ConnectionScreen() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val discovery = remember { com.truvision.app.connectivity.UsbIpDiscovery() }
-    val prefs = remember { com.truvision.app.connectivity.UsbPreferences(context) }
-    val overridePrefs = remember { com.truvision.app.connectivity.OverridePreferences(context) }
-    val scope = rememberCoroutineScope()
-
-    var status by remember { mutableStateOf("Not connected") }
-    var lastCode by remember { mutableStateOf<Int?>(null) }
-    var baseUrl by remember { mutableStateOf<String?>(null) }
-    var latencyMs by remember { mutableStateOf<Long?>(null) }
+    val viewModel: ConnectionViewModel = viewModel()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isChecking by viewModel.isChecking.collectAsState()
 
     Column(
         modifier = Modifier
@@ -153,101 +235,23 @@ fun ConnectionScreen() {
     ) {
         Text("Connection Status", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        Text("Status: $status")
-        Text("Last HTTP code: ${lastCode?.toString() ?: "--"}")
-        Text("Base URL: ${baseUrl ?: "--"}")
-        Text("Latency: ${latencyMs?.let { "$it ms" } ?: "--"}")
+        
+        Text("Status: ${connectionState.status}")
+        Text("Last HTTP code: ${connectionState.httpCode?.toString() ?: "--"}")
+        Text("Base URL: ${connectionState.baseUrl ?: "--"}")
+        Text("Latency: ${connectionState.latencyMs?.let { "$it ms" } ?: "--"}")
+        
         Spacer(modifier = Modifier.height(24.dp))
         
-        if (BuildConfig.DEBUG) {
-            androidx.compose.material3.Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        "Diagnostics (Debug Only)",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Last health status: $status", style = MaterialTheme.typography.bodySmall)
-                    Text("Last HTTP code: ${lastCode?.toString() ?: "--"}", style = MaterialTheme.typography.bodySmall)
-                    Text("Last base URL: ${baseUrl ?: "--"}", style = MaterialTheme.typography.bodySmall)
-                    Text("Last latency: ${latencyMs?.let { "$it ms" } ?: "--"}", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        
-        Button(onClick = {
-            status = "Checking..."
-            lastCode = null
-            baseUrl = null
-            latencyMs = null
-
-            scope.launch {
-                val isOverride = overridePrefs.isOverrideEnabled()
-                
-                if (isOverride) {
-                    val overrideUrl = overridePrefs.getOverrideUrl()
-                    val startTime = System.currentTimeMillis()
-                    
-                    try {
-                        val url = "$overrideUrl/health"
-                        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                        conn.apply {
-                            requestMethod = "GET"
-                            instanceFollowRedirects = false
-                            connectTimeout = 2000
-                            readTimeout = 2000
-                        }
-                        conn.connect()
-                        val code = conn.responseCode
-                        conn.disconnect()
-                        
-                        lastCode = code
-                        latencyMs = System.currentTimeMillis() - startTime
-                        
-                        if (code in 200..299) {
-                            status = "Connected"
-                            baseUrl = overrideUrl
-                        } else {
-                            status = "Not connected"
-                            baseUrl = overrideUrl
-                        }
-                    } catch (e: Exception) {
-                        latencyMs = System.currentTimeMillis() - startTime
-                        status = "Not connected"
-                        lastCode = null
-                        baseUrl = overrideUrl
-                    }
-                } else {
-                    val lastKnownIp = prefs.getLastSuccessfulIp()
-                    val result = discovery.discoverUsbBaseUrl(lastKnownIp)
-                    
-                    lastCode = result.httpCode
-                    latencyMs = result.latencyMs
-                    
-                    if (result.baseUrl != null && result.httpCode != null && result.httpCode in 200..299) {
-                        status = "Connected"
-                        baseUrl = result.baseUrl
-                        
-                        val ip = result.baseUrl.replace("http://", "").replace(":8000", "")
-                        prefs.saveLastSuccessfulIp(ip)
-                    } else {
-                        status = "Not connected"
-                        baseUrl = result.baseUrl
-                    }
-                }
-            }
-        }) {
-            Text("Run USB health check")
+        Button(
+            onClick = { viewModel.checkConnection() },
+            enabled = !isChecking
+        ) {
+            Text(if (isChecking) "Checking..." else "Run USB health check")
         }
     }
 }
+
 @Composable
 fun ScreenPlaceholder(title: String, content: String) {
     Column(
