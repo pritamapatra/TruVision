@@ -17,4 +17,8 @@ interface TruVisionApi {
     
     @GET("health")
     suspend fun health(): Response<Map<String, String>>
+
+    @GET("samples")
+    suspend fun getSamples(): Response<List<SampleResponse>>
+
 }

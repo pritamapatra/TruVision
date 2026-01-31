@@ -17,7 +17,8 @@ data class JobState(
     val status: String = "unknown",
     val detectedCount: Int? = null,
     val isPolling: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val elapsedSeconds: Int = 0
 )
 
 class ResultsViewModel(application: Application) : AndroidViewModel(application) {
@@ -28,11 +29,14 @@ class ResultsViewModel(application: Application) : AndroidViewModel(application)
     val jobState: StateFlow<JobState> = _jobState.asStateFlow()
     
     private var pollingJob: Job? = null
+    private var timerJob: Job? = null
     
     fun startPolling(jobId: String) {
-        pollingJob?.cancel()
+        cancelPolling()
         
-        _jobState.value = JobState(jobId = jobId, isPolling = true)
+        _jobState.value = JobState(jobId = jobId, isPolling = true, status = "running")
+        
+        startTimer()
         
         pollingJob = viewModelScope.launch {
             while (true) {
@@ -44,33 +48,64 @@ class ResultsViewModel(application: Application) : AndroidViewModel(application)
                     
                     if (response.isSuccessful && response.body() != null) {
                         val body = response.body()!!
-                        _jobState.value = JobState(
-                            jobId = jobId,
+                        val isCompleted = body.status == "completed"
+                        
+                        _jobState.value = _jobState.value.copy(
                             status = body.status,
                             detectedCount = body.detectedCount,
-                            isPolling = body.status != "completed",
+                            isPolling = !isCompleted,
                             error = null
                         )
                         
-                        if (body.status == "completed") {
+                        if (isCompleted) {
+                            stopTimer()
                             break
                         }
                     } else {
                         _jobState.value = _jobState.value.copy(
-                            error = "Failed to get job status: ${response.code()}"
+                            error = "Failed to get job status: ${response.code()}",
+                            isPolling = false
                         )
+                        stopTimer()
+                        break
                     }
                 } catch (e: Exception) {
                     _jobState.value = _jobState.value.copy(
                         error = "Network error: ${e.message}",
                         isPolling = false
                     )
+                    stopTimer()
                     break
                 }
                 
                 delay(2500)
             }
         }
+    }
+    
+    private fun startTimer() {
+        timerJob?.cancel()
+        timerJob = viewModelScope.launch {
+            var seconds = 0
+            while (true) {
+                delay(1000)
+                seconds++
+                _jobState.value = _jobState.value.copy(elapsedSeconds = seconds)
+            }
+        }
+    }
+    
+    private fun stopTimer() {
+        timerJob?.cancel()
+    }
+    
+    fun cancelPolling() {
+        pollingJob?.cancel()
+        stopTimer()
+        _jobState.value = _jobState.value.copy(
+            isPolling = false,
+            error = "Cancelled by user"
+        )
     }
     
     fun retryPolling() {
@@ -82,6 +117,6 @@ class ResultsViewModel(application: Application) : AndroidViewModel(application)
     
     override fun onCleared() {
         super.onCleared()
-        pollingJob?.cancel()
+        cancelPolling()
     }
 }

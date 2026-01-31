@@ -5,7 +5,19 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Card
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
@@ -22,7 +34,10 @@ import com.truvision.app.ui.theme.TruVisionTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import com.truvision.app.connectivity.ConnectionViewModel
+import com.truvision.app.connectivity.ConnectionState
 import com.truvision.app.visual.VisualViewModel
+import com.truvision.app.history.HistoryViewModel
+import com.truvision.app.history.HistoryState
 import com.truvision.app.visual.CaptureState
 import com.truvision.app.results.ResultsViewModel
 import com.truvision.app.results.JobState
@@ -39,9 +54,63 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+fun ConnectionStatusBanner(
+    connectionState: ConnectionState,
+    isChecking: Boolean,
+    onRetry: () -> Unit
+) {
+    if (connectionState.status != "Connected") {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.errorContainer,
+            tonalElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Warning",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Device unreachable",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+                Button(
+                    onClick = onRetry,
+                    enabled = !isChecking,
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Text(if (isChecking) "Checking..." else "Retry")
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavigation() {
+    val connectionViewModel: ConnectionViewModel = viewModel()
+    val connectionState by connectionViewModel.connectionState.collectAsState()
+    val isChecking by connectionViewModel.isChecking.collectAsState()
+    
     val navController = rememberNavController()
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -49,9 +118,16 @@ fun AppNavigation() {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("TruVision") }
-            )
+            Column {
+                TopAppBar(
+                    title = { Text("TruVision") }
+                )
+                ConnectionStatusBanner(
+                    connectionState = connectionState,
+                    isChecking = isChecking,
+                    onRetry = { connectionViewModel.checkConnection() }
+                )
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -150,22 +226,57 @@ fun ResultsScreen(jobId: String?) {
                         Text("Retry")
                     }
                 }
-                jobState.isPolling -> {
+                jobState.isPolling && jobState.status == "running" -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Status: ${jobState.status}")
-                    Text("Polling for updates...", style = MaterialTheme.typography.bodySmall)
-                }
-                jobState.status == "completed" -> {
-                    Text("Status: Completed", color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "Status: Running",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Detected Count: ${jobState.detectedCount ?: 0}",
-                        style = MaterialTheme.typography.headlineSmall
+                        "Elapsed time: ${jobState.elapsedSeconds}s",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Processing microplastic detection...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    OutlinedButton(onClick = { viewModel.cancelPolling() }) {
+                        Text("Cancel")
+                    }
+                }
+                jobState.status == "completed" -> {
+                    Text(
+                        "Status: Completed",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Processing time: ${jobState.elapsedSeconds}s",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Detected Count: ${jobState.detectedCount ?: 0} particles",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.secondary
                     )
                 }
                 else -> {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text("Status: ${jobState.status}")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Elapsed time: ${jobState.elapsedSeconds}s",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }
@@ -253,13 +364,77 @@ fun AnalysisScreen() {
 
 @Composable
 fun HistoryScreen() {
-    ScreenPlaceholder(title = "History", content = "Sample history will be listed here.")
+    val viewModel: HistoryViewModel = viewModel()
+    val historyState by viewModel.historyState.collectAsState()
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("History", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        when (val state = historyState) {
+            is HistoryState.Loading -> {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Loading samples...")
+            }
+            is HistoryState.Success -> {
+                if (state.samples.isEmpty()) {
+                    Text(
+                        "No samples yet",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.samples.size) { index ->
+                            val sample = state.samples[index]
+                            Card(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text("Job ID: ${sample.jobId}", style = MaterialTheme.typography.titleMedium)
+                                    Text("Status: ${sample.status}")
+                                    sample.detectedCount?.let {
+                                        Text("Detected: $it particles")
+                                    }
+                                    sample.timestamp?.let {
+                                        Text("Time: $it", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            is HistoryState.Error -> {
+                Text(
+                    state.message,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { viewModel.fetchSamples() }) {
+                    Text("Retry")
+                }
+            }
+        }
+    }
 }
 
 @Composable
 fun SettingsScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val overridePrefs = remember { com.truvision.app.connectivity.OverridePreferences(context) }
+    val connectionViewModel: ConnectionViewModel = viewModel()
+    val connectionState by connectionViewModel.connectionState.collectAsState()
     
     var isOverrideEnabled by remember { mutableStateOf(overridePrefs.isOverrideEnabled()) }
     var overrideUrl by remember { mutableStateOf(overridePrefs.getOverrideUrl()) }
@@ -267,7 +442,8 @@ fun SettingsScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
@@ -308,6 +484,47 @@ fun SettingsScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text("Connection Diagnostics", style = MaterialTheme.typography.titleLarge)
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                DiagnosticRow("Base URL", connectionState.baseUrl ?: "--")
+                DiagnosticRow("Last HTTP Code", connectionState.httpCode?.toString() ?: "--")
+                DiagnosticRow("Latency", connectionState.latencyMs?.let { "${it}ms" } ?: "--")
+                DiagnosticRow("Status", connectionState.status)
+            }
+        }
+    }
+}
+
+@Composable
+fun DiagnosticRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+        )
     }
 }
 @Composable
@@ -323,22 +540,53 @@ fun ConnectionScreen() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Connection Status", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
+        Text("Connection", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(32.dp))
         
-        Text("Status: ${connectionState.status}")
-        Text("Last HTTP code: ${connectionState.httpCode?.toString() ?: "--"}")
-        Text("Base URL: ${connectionState.baseUrl ?: "--"}")
-        Text("Latency: ${connectionState.latencyMs?.let { "$it ms" } ?: "--"}")
+        if (connectionState.status == "Connected") {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "Connected",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Connected",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Not connected",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Not connected",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
         
         Button(
             onClick = { viewModel.checkConnection() },
             enabled = !isChecking
         ) {
-            Text(if (isChecking) "Checking..." else "Run USB health check")
+            Text(if (isChecking) "Checking..." else "Retry Connection")
         }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Text(
+            "See Settings → Advanced for diagnostics",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
