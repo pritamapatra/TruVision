@@ -34,6 +34,6 @@ class OverridePreferences(context: Context) {
         private const val PREFS_NAME = "override_prefs"
         private const val KEY_OVERRIDE_ENABLED = "override_enabled"
         private const val KEY_OVERRIDE_URL = "override_url"
-        private const val DEFAULT_URL = "http://192.168.231.240:8000"
+        private const val DEFAULT_URL = "http://192.168.238.191:8000"
     }
 }

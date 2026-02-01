@@ -1,99 +1,85 @@
 package com.truvision.app.connectivity
 
-import android.content.Context
+import android.app.Application
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 
-data class ConnectionState(
-    val status: String = "Not connected",
+data class ConnectionResult(
+    val isSuccess: Boolean,
     val httpCode: Int? = null,
-    val baseUrl: String? = null,
-    val latencyMs: Long? = null
+    val latencyMs: Long? = null,
+    val errorMessage: String? = null
 )
 
-class ConnectionRepository(context: Context) {
-    private val discovery = UsbIpDiscovery()
-    private val usbPrefs = UsbPreferences(context)
-    private val overridePrefs = OverridePreferences(context)
-
-    suspend fun checkConnection(): ConnectionState {
-        val isOverride = overridePrefs.isOverrideEnabled()
-        
-        return if (isOverride) {
-            checkOverrideConnection()
-        } else {
-            checkUsbDiscoveryConnection()
-        }
-    }
-
-    private suspend fun checkOverrideConnection(): ConnectionState {
-        val overrideUrl = overridePrefs.getOverrideUrl()
-        val startTime = System.currentTimeMillis()
-        
-        return try {
-            val url = "${overrideUrl}/health"
-            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-            conn.apply {
-                requestMethod = "GET"
-                instanceFollowRedirects = false
-                connectTimeout = 2000
-                readTimeout = 2000
-            }
-            conn.connect()
-            val code = conn.responseCode
-            conn.disconnect()
-            
-            val latency = System.currentTimeMillis() - startTime
-            
-            ConnectionState(
-                status = if (code in 200..299) "Connected" else "Not connected",
-                httpCode = code,
-                baseUrl = overrideUrl,
-                latencyMs = latency
-            )
-        } catch (e: Exception) {
-            ConnectionState(
-                status = "Not connected",
-                httpCode = null,
-                baseUrl = overrideUrl,
-                latencyMs = System.currentTimeMillis() - startTime
-            )
-        }
-    }
-
-    private suspend fun checkUsbDiscoveryConnection(): ConnectionState {
-        val lastKnownIp = usbPrefs.getLastSuccessfulIp()
-        val result = discovery.discoverUsbBaseUrl(lastKnownIp)
-        
-        return if (result.baseUrl != null && result.httpCode != null && result.httpCode in 200..299) {
-            val ip = result.baseUrl.replace("http://", "").replace(":8000", "")
-            usbPrefs.saveLastSuccessfulIp(ip)
-            
-            ConnectionState(
-                status = "Connected",
-                httpCode = result.httpCode,
-                baseUrl = result.baseUrl,
-                latencyMs = result.latencyMs
-            )
-        } else {
-            ConnectionState(
-                status = "Not connected",
-                httpCode = result.httpCode,
-                baseUrl = result.baseUrl,
-                latencyMs = result.latencyMs
-            )
-        }
-    }
+class ConnectionRepository(private val application: Application) {
+    private val overridePrefs = OverridePreferences(application)
+    private val usbPrefs = UsbPreferences(application)
 
     fun getCurrentBaseUrl(): String {
-        return if (overridePrefs.isOverrideEnabled()) {
+        val url = if (overridePrefs.isOverrideEnabled()) {
             overridePrefs.getOverrideUrl()
         } else {
             val lastIp = usbPrefs.getLastSuccessfulIp()
             if (lastIp != null) {
-                "http://${lastIp}:8000"
+                "http://$lastIp:8000"
             } else {
-                "http://192.168.231.240:8000"
+                ConnectivityConstants.USB_BASE_URL
             }
         }
+        Log.d("ConnectionRepository", "getCurrentBaseUrl() returning: $url")
+        Log.d("ConnectionRepository", "Override enabled: ${overridePrefs.isOverrideEnabled()}")
+        return url
     }
 
+    suspend fun checkConnection(): ConnectionResult = withContext(Dispatchers.IO) {
+        val baseUrl = getCurrentBaseUrl()
+        val healthUrl = "$baseUrl/${ConnectivityConstants.HEALTH_PATH}"
+        
+        Log.d("ConnectionRepository", "checkConnection() starting")
+        Log.d("ConnectionRepository", "Full health URL: $healthUrl")
+        
+        val startTime = System.currentTimeMillis()
+        
+        try {
+            val url = URL(healthUrl)
+            Log.d("ConnectionRepository", "Opening connection to: $url")
+            
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 5000
+                readTimeout = 5000
+                instanceFollowRedirects = false
+            }
+            
+            Log.d("ConnectionRepository", "Connecting...")
+            conn.connect()
+            
+            val code = conn.responseCode
+            val latency = System.currentTimeMillis() - startTime
+            
+            Log.d("ConnectionRepository", "Response code: $code, latency: ${latency}ms")
+            
+            conn.disconnect()
+            
+            ConnectionResult(
+                isSuccess = code == 200,
+                httpCode = code,
+                latencyMs = latency
+            )
+        } catch (e: Exception) {
+            val latency = System.currentTimeMillis() - startTime
+            Log.e("ConnectionRepository", "Connection failed after ${latency}ms", e)
+            Log.e("ConnectionRepository", "Error type: ${e.javaClass.simpleName}")
+            Log.e("ConnectionRepository", "Error message: ${e.message}")
+            
+            ConnectionResult(
+                isSuccess = false,
+                latencyMs = latency,
+                errorMessage = e.message
+            )
+        }
+    }
 }
