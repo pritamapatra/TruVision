@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import List, Dict, Optional
 
-DB_FILE = 'truvision.db'
+DB_FILE = "truvision.db"
 
 def init_db():
     """Initialize the database with samples table"""
@@ -18,6 +18,8 @@ def init_db():
             detected_count INTEGER,
             image_path TEXT,
             detections TEXT,
+            capture_timestamp TEXT,
+            capture_method TEXT,
             created_at TEXT NOT NULL
         )
     ''')
@@ -25,30 +27,32 @@ def init_db():
     conn.close()
     print(f"Database initialized: {DB_FILE}")
 
-def save_sample(job_id: str, status: str = 'pending'):
+def save_sample(job_id: str, status: str = "pending"):
     """Save a new sample to the database"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     timestamp = datetime.now().isoformat()
-    cursor.execute(
-        'INSERT INTO samples (job_id, timestamp, status, detected_count, image_path, detections, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        (job_id, timestamp, status, None, None, None, timestamp)
-    )
+    cursor.execute('''
+        INSERT INTO samples (job_id, timestamp, status, detected_count, image_path, detections, capture_timestamp, capture_method, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (job_id, timestamp, status, None, None, None, None, None, timestamp))
     conn.commit()
     conn.close()
 
 def update_sample_status(job_id: str, status: str, detected_count: Optional[int] = None, 
-                         image_path: Optional[str] = None, detections: Optional[List[Dict]] = None):
+                        image_path: Optional[str] = None, detections: Optional[List[Dict]] = None,
+                        capture_timestamp: Optional[str] = None, capture_method: Optional[str] = None):
     """Update sample status and detection data"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
     detections_json = json.dumps(detections) if detections else None
     
-    cursor.execute(
-        'UPDATE samples SET status = ?, detected_count = ?, image_path = ?, detections = ? WHERE job_id = ?',
-        (status, detected_count, image_path, detections_json, job_id)
-    )
+    cursor.execute('''
+        UPDATE samples 
+        SET status = ?, detected_count = ?, image_path = ?, detections = ?, capture_timestamp = ?, capture_method = ?
+        WHERE job_id = ?
+    ''', (status, detected_count, image_path, detections_json, capture_timestamp, capture_method, job_id))
     conn.commit()
     conn.close()
 
@@ -57,7 +61,7 @@ def get_all_samples() -> List[Dict]:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path FROM samples ORDER BY created_at DESC')
+    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path, capture_method FROM samples ORDER BY created_at DESC')
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -67,10 +71,9 @@ def get_sample(job_id: str) -> Optional[Dict]:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path, detections FROM samples WHERE job_id = ?', (job_id,))
+    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path, detections, capture_timestamp, capture_method FROM samples WHERE job_id = ?', (job_id,))
     row = cursor.fetchone()
     conn.close()
-    
     if row:
         result = dict(row)
         if result.get('detections'):
