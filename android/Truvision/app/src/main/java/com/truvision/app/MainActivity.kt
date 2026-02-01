@@ -42,6 +42,8 @@ import com.truvision.app.visual.CaptureState
 import com.truvision.app.results.ResultsViewModel
 import com.truvision.app.results.JobState
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -197,11 +199,11 @@ fun ResultsScreen(jobId: String?) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Results", style = MaterialTheme.typography.headlineMedium)
+        Text("Detection Results", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(24.dp))
         
         if (jobId == null || jobId.isEmpty()) {
@@ -211,9 +213,6 @@ fun ResultsScreen(jobId: String?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            Text("Job ID: ${jobState.jobId ?: jobId}", style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(16.dp))
-            
             when {
                 jobState.error != null -> {
                     Text(
@@ -230,60 +229,155 @@ fun ResultsScreen(jobId: String?) {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "Status: Running",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Elapsed time: ${jobState.elapsedSeconds}s",
+                        "Processing microplastic detection...",
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Processing microplastic detection...",
-                        style = MaterialTheme.typography.bodySmall,
+                        "Elapsed time: ${jobState.elapsedSeconds}s",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
-                    OutlinedButton(onClick = { viewModel.cancelPolling() }) {
-                        Text("Cancel")
-                    }
                 }
                 jobState.status == "completed" -> {
-                    Text(
-                        "Status: Completed",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Processing time: ${jobState.elapsedSeconds}s",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    val count = jobState.detectedCount ?: 0
+                    val riskLevel = when {
+                        count <= 3 -> "Low"
+                        count <= 6 -> "Medium"
+                        else -> "High"
+                    }
+                    val riskColor = when (riskLevel) {
+                        "Low" -> Color(0xFF4CAF50)
+                        "Medium" -> Color(0xFFFFA726)
+                        else -> Color(0xFFF44336)
+                    }
+                    
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = riskColor.copy(alpha = 0.1f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "$count",
+                                style = MaterialTheme.typography.displayLarge,
+                                color = riskColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Microplastic Particles Detected",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Risk Level: $riskLevel",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = riskColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "Detected Count: ${jobState.detectedCount ?: 0} particles",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+                    
+                    val detections = jobState.detections ?: emptyList()
+                    if (detections.isNotEmpty()) {
+                        val polymerBreakdown = detections.groupingBy { it.polymerType }.eachCount()
+                        
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    "Polymer Breakdown",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                polymerBreakdown.entries.sortedByDescending { it.value }.forEach { (polymer, count) ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("$count× $polymer", style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Text(
+                            "Individual Detections",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        detections.forEach { detection ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            detection.polymerType,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            "Confidence: ${(detection.confidence * 100).toInt()}%",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        "#${detection.id}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Metadata",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Job ID: ${jobState.jobId}", style = MaterialTheme.typography.bodySmall)
+                            Text("Processing Time: ${jobState.elapsedSeconds}s", style = MaterialTheme.typography.bodySmall)
+                            if (jobState.imagePath != null) {
+                                Text("Image: ${jobState.imagePath}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                 }
                 else -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Status: ${jobState.status}")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Elapsed time: ${jobState.elapsedSeconds}s",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text("Initializing...", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
     }
 }
-
-
 
 @Composable
 fun VisualScreen(navController: androidx.navigation.NavController) {

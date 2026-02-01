@@ -3,6 +3,7 @@ package com.truvision.app.results
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.truvision.app.api.Detection
 import com.truvision.app.api.RetrofitClient
 import com.truvision.app.connectivity.ConnectionRepository
 import kotlinx.coroutines.Job
@@ -16,6 +17,8 @@ data class JobState(
     val jobId: String? = null,
     val status: String = "unknown",
     val detectedCount: Int? = null,
+    val detections: List<Detection>? = null,
+    val imagePath: String? = null,
     val isPolling: Boolean = false,
     val error: String? = null,
     val elapsedSeconds: Int = 0
@@ -53,6 +56,8 @@ class ResultsViewModel(application: Application) : AndroidViewModel(application)
                         _jobState.value = _jobState.value.copy(
                             status = body.status,
                             detectedCount = body.detectedCount,
+                            detections = body.detections,
+                            imagePath = body.imagePath,
                             isPolling = !isCompleted,
                             error = null
                         )
@@ -84,28 +89,26 @@ class ResultsViewModel(application: Application) : AndroidViewModel(application)
     }
     
     private fun startTimer() {
-        timerJob?.cancel()
         timerJob = viewModelScope.launch {
-            var seconds = 0
             while (true) {
                 delay(1000)
-                seconds++
-                _jobState.value = _jobState.value.copy(elapsedSeconds = seconds)
+                _jobState.value = _jobState.value.copy(
+                    elapsedSeconds = _jobState.value.elapsedSeconds + 1
+                )
             }
         }
     }
     
     private fun stopTimer() {
         timerJob?.cancel()
+        timerJob = null
     }
     
     fun cancelPolling() {
         pollingJob?.cancel()
+        pollingJob = null
         stopTimer()
-        _jobState.value = _jobState.value.copy(
-            isPolling = false,
-            error = "Cancelled by user"
-        )
+        _jobState.value = _jobState.value.copy(isPolling = false)
     }
     
     fun retryPolling() {
