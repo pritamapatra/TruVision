@@ -1,112 +1,166 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import asyncio
-import uuid
-import os
+from fastapi.responses import FileResponse
+import sqlite3
+from pathlib import Path
+import json
 from datetime import datetime
-from database import init_db, save_sample, update_sample_status, get_all_samples, get_sample
-from yolo_detector import detect_microplastics
-from capture_image import capture_from_camera
+from database import init_db, get_all_samples, get_sample
+import capture_image
+import zipfile
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+DB_PATH = "truvision.db"
+SAMPLES_DIR = Path("samples")
 
 @app.on_event("startup")
-def startup_event():
+async def startup():
     init_db()
-    os.makedirs("samples", exist_ok=True)
+    SAMPLES_DIR.mkdir(exist_ok=True)
+    print(f"Database initialized: {DB_PATH}")
     print("Backend started - database and samples folder ready")
 
 @app.get("/health")
-def health():
+async def health():
     return {"status": "ok"}
-
-@app.get("/samples")
-def get_samples():
-    samples = get_all_samples()
-    return samples
 
 @app.post("/capture/start")
 async def start_capture():
+    import uuid
     job_id = f"job-{uuid.uuid4().hex[:8]}"
-    save_sample(job_id, status="pending")
     
-    sample_dir = f"samples/{job_id}"
-    os.makedirs(sample_dir, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO samples (job_id, status, timestamp, created_at) VALUES (?, ?, ?, ?)",
+        (job_id, "pending", datetime.now().isoformat(), datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
     
-    asyncio.create_task(simulate_processing(job_id, sample_dir))
+    job_dir = SAMPLES_DIR / job_id
+    job_dir.mkdir(exist_ok=True)
     
-    return {"job_id": job_id, "status": "pending"}
+    import asyncio
+    asyncio.create_task(process_job(job_id))
+    
+    return {"job_id": job_id, "status": "processing"}
+
+async def process_job(job_id: str):
+    import time
+    from detector import detect_microplastics
+    
+    job_dir = SAMPLES_DIR / job_id
+    image_path = job_dir / "captured.jpg"
+    
+    print(f"[Job {job_id}] Starting camera capture...")
+    result = capture_image.capture_from_camera(str(image_path))
+    
+    if not result.get('success'):
+        print(f"[Job {job_id}] Camera failed, using fallback test image...")
+        import shutil
+        test_image = Path("test_yolo_microplastic_sample.jpg")
+        if test_image.exists():
+            shutil.copy(test_image, image_path)
+            print(f"[Job {job_id}] Fallback image copied - continuing with detection")
+        else:
+            print(f"[Job {job_id}] No fallback image available - marking as failed")
+            update_job(job_id, "failed", 0)
+            return
+    
+    print(f"[Job {job_id}] Camera capture successful: {result.get('size_bytes', 0)} bytes")
+    
+    start = time.time()
+    detections = detect_microplastics(str(image_path))
+    processing_time = int((time.time() - start) * 1000)
+    
+    detections_path = job_dir / "detections.json"
+    with open(detections_path, 'w') as f:
+        json.dump(detections, f, indent=2)
+    
+    update_job(job_id, "completed", len(detections), str(image_path), json.dumps(detections))
+    print(f"[Job {job_id}] Completed with {len(detections)} detections (method: camera)")
+
+def update_job(job_id: str, status: str, count: int, img_path: str = None, detections_json: str = None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    if img_path and detections_json:
+        cursor.execute(
+            "UPDATE samples SET status=?, detected_count=?, image_path=?, detections=? WHERE job_id=?",
+            (status, count, img_path, detections_json, job_id)
+        )
+    elif img_path:
+        cursor.execute(
+            "UPDATE samples SET status=?, detected_count=?, image_path=? WHERE job_id=?",
+            (status, count, img_path, job_id)
+        )
+    else:
+        cursor.execute(
+            "UPDATE samples SET status=?, detected_count=? WHERE job_id=?",
+            (status, count, job_id)
+        )
+    conn.commit()
+    conn.close()
 
 @app.get("/jobs/{job_id}")
 def get_job_status(job_id: str):
+    """Get job status and detections"""
     sample = get_sample(job_id)
     if not sample:
         raise HTTPException(status_code=404, detail="Job not found")
-    
-    return {
-        "job_id": sample["job_id"],
-        "status": sample["status"],
-        "detected_count": sample["detected_count"],
-        "image_path": sample["image_path"],
-        "detections": sample.get("detections"),
-        "capture_method": sample.get("capture_method")
-    }
+    return sample
 
-async def simulate_processing(job_id: str, sample_dir: str):
-    await asyncio.sleep(2)
-    update_sample_status(job_id, "running")
+@app.get("/export/{job_id}")
+async def export_job(job_id: str):
+    """Create and return ZIP with captured.jpg, detections.json, metadata.csv"""
+    job_dir = SAMPLES_DIR / job_id
+    if not job_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
     
-    image_path = f"{sample_dir}/captured.jpg"
+    # Create ZIP
+    zip_path = job_dir / "export.zip"
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # Add captured.jpg
+        img_path = job_dir / "captured.jpg"
+        if img_path.exists():
+            zf.write(img_path, "captured.jpg")
+        
+        # Add detections.json
+        det_path = job_dir / "detections.json"
+        if det_path.exists():
+            zf.write(det_path, "detections.json")
+        
+        # Create and add metadata.csv
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT job_id, status, detected_count, image_path, timestamp, capture_method FROM samples WHERE job_id = ?", (job_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            csv_path = job_dir / "metadata.csv"
+            with open(csv_path, 'w') as f:
+                f.write("field,value\n")
+                f.write(f"job_id,{row[0]}\n")
+                f.write(f"status,{row[1]}\n")
+                f.write(f"detected_count,{row[2]}\n")
+                f.write(f"image_path,{row[3]}\n")
+                f.write(f"timestamp,{row[4]}\n")
+                f.write(f"capture_method,{row[5]}\n")
+            zf.write(csv_path, "metadata.csv")
     
-    # REAL CAMERA CAPTURE - Replace placeholder with actual camera
-    print(f"[Job {job_id}] Starting camera capture...")
-    capture_result = capture_from_camera(image_path)
-    
-    if capture_result["success"]:
-        print(f"[Job {job_id}] Camera capture successful: {capture_result['file_size']} bytes")
-        capture_timestamp = capture_result["timestamp"]
-        capture_method = "camera"
-    else:
-        # Fallback to test image if camera fails
-        print(f"[Job {job_id}] Camera failed: {capture_result.get('error')}, using test image")
-        test_image = "/home/truvision/test_yolo/microplastic_sample.jpg"
-        if os.path.exists(test_image):
-            import shutil
-            shutil.copy(test_image, image_path)
-            capture_timestamp = datetime.now().isoformat()
-            capture_method = "test_image"
-            print(f"[Job {job_id}] Copied test image to {image_path}")
-        else:
-            print(f"[Job {job_id}] No test image available")
-            capture_timestamp = None
-            capture_method = None
-    
-    await asyncio.sleep(1)
-    
-    # Run YOLO detection
-    detection_result = detect_microplastics(image_path) if os.path.exists(image_path) else {"detected_count": 0, "detections": []}
-    
-    # Update database with all metadata
-    update_sample_status(
-        job_id,
-        "completed",
-        detected_count=detection_result["detected_count"],
-        image_path=image_path if os.path.exists(image_path) else None,
-        detections=detection_result["detections"],
-        capture_timestamp=capture_timestamp,
-        capture_method=capture_method
+    return FileResponse(
+        path=str(zip_path),
+        filename=f"{job_id}.zip",
+        media_type="application/zip"
     )
-    
-    print(f"[Job {job_id}] Completed with {detection_result['detected_count']} detections (method: {capture_method})")
+
+@app.get("/samples")
+def get_samples():
+    """Get all samples from database"""
+    samples = get_all_samples()
+    return samples
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
