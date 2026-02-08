@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 
 data class JobState(
     val jobId: String? = null,
@@ -118,8 +121,61 @@ class ResultsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     
+
+    fun exportJob(jobId: String) {
+        if (jobId.isEmpty()) return
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val baseUrl = repository.getCurrentBaseUrl()
+                val api = RetrofitClient.getApi(baseUrl)
+                val call = api.exportJob(jobId)
+                val response = call.execute()
+                
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(
+                        android.os.Environment.DIRECTORY_DOWNLOADS
+                    )
+                    val outputFile = java.io.File(downloadsDir, "$jobId.zip")
+                    
+                    val inputStream = body.byteStream()
+                    val outputStream = outputFile.outputStream()
+                    inputStream.copyTo(outputStream)
+                    outputStream.close()
+                    inputStream.close()
+                    
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            getApplication(),
+                            "Exported to Downloads/$jobId.zip",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            getApplication(),
+                            "Export failed",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        getApplication(),
+                        "Export failed: ${e.message}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         cancelPolling()
     }
+
 }

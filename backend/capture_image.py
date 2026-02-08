@@ -2,13 +2,14 @@ import subprocess
 import os
 from datetime import datetime
 
-def capture_from_camera(output_path: str, resolution: str = "640x480") -> dict:
+def capture_from_camera(output_path: str, resolution: str = "640x480", device: str = "/dev/video0") -> dict:
     """
     Capture image from USB microscope using fswebcam.
     
     Args:
         output_path: Full path where image should be saved
         resolution: Camera resolution (default 640x480 for USB microscope)
+        device: Camera device path (default /dev/video0)
     
     Returns:
         dict with success status, path, timestamp, and any error
@@ -24,13 +25,15 @@ def capture_from_camera(output_path: str, resolution: str = "640x480") -> dict:
         # Build fswebcam command
         cmd = [
             "fswebcam",
+            "-d", device,
             "-r", resolution,
+            "--jpeg", "85",
             "--no-banner",
             "-D", "1",
             output_path
         ]
         
-        print(f"[Camera] Capturing image to {output_path}...")
+        print(f"[Camera] Capturing image from {device} to {output_path}...")
         
         # Run capture command
         result = subprocess.run(
@@ -49,6 +52,7 @@ def capture_from_camera(output_path: str, resolution: str = "640x480") -> dict:
                 "timestamp": timestamp,
                 "file_size": file_size,
                 "resolution": resolution,
+                "device": device,
                 "method": "camera"
             }
         else:

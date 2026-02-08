@@ -368,6 +368,18 @@ fun ResultsScreen(jobId: String?) {
                             }
                         }
                     }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Week 10 - Export Button
+                    Button(
+                        onClick = { 
+                            viewModel.exportJob(jobState.jobId ?: "")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Export Sample")
+                    }
                 }
                 else -> {
                     CircularProgressIndicator()
