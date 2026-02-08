@@ -46,4 +46,24 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
+
+    fun deleteSample(jobId: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val baseUrl = repository.getCurrentBaseUrl()
+                val api = RetrofitClient.getApi(baseUrl)
+                val response = api.deleteSample(jobId)
+                if (response.isSuccessful) {
+                    onResult(true, "Sample deleted")
+                    // Refresh list after delete
+                    fetchSamples()
+                } else {
+                    onResult(false, "Failed to delete sample (code ${response.code()})")
+                }
+            } catch (e: Exception) {
+                onResult(false, "Network error: ${e.message ?: "Unknown error"}")
+            }
+        }
+    }
+
 }
