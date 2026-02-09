@@ -82,4 +82,31 @@ class ConnectionRepository(private val application: Application) {
             )
         }
     }
+
+    suspend fun disconnect(): ConnectionResult = withContext(Dispatchers.IO) {
+        val baseUrl = getCurrentBaseUrl()
+        val disconnectUrl = "$baseUrl/disconnect"
+        
+        Log.d("ConnectionRepository", "disconnect() starting")
+        Log.d("ConnectionRepository", "Disconnect URL: $disconnectUrl")
+        
+        try {
+            val url = URL(disconnectUrl)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 3000
+                readTimeout = 3000
+            }
+            
+            conn.connect()
+            val code = conn.responseCode
+            Log.d("ConnectionRepository", "Disconnect response: $code")
+            conn.disconnect()
+            
+            ConnectionResult(isSuccess = code in 200..299, httpCode = code)
+        } catch (e: Exception) {
+            Log.e("ConnectionRepository", "Disconnect failed", e)
+            ConnectionResult(isSuccess = false, errorMessage = e.message)
+        }
+    }
 }

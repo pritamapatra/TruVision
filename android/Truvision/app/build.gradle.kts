@@ -47,6 +47,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("androidx.compose.material:material-icons-extended:1.6.0")
     // Week 3: ViewModel and Lifecycle
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
@@ -74,3 +75,5 @@ dependencies {
 }
 // Week 1: Navigation
 // Uses androidx.navigation:navigation-compose via version catalog (libs.androidx.navigation.compose).
+
+    // Material Icons Extended (for more icons)

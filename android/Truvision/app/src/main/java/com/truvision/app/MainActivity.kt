@@ -4,13 +4,23 @@ import com.truvision.app.BuildConfig
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
@@ -28,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.NavType
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.truvision.app.ui.theme.TruVisionTheme
@@ -62,13 +73,24 @@ class MainActivity : ComponentActivity() {
 fun ConnectionStatusBanner(
     connectionState: ConnectionState,
     isChecking: Boolean,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onClose: () -> Unit,
+    isCollapsed: Boolean
 ) {
-    if (connectionState.status != "Connected") {
+    if (!isCollapsed) {
+        val isConnected = connectionState.status == "Connected"
+        val isDisconnected = connectionState.status == "Disconnected" || connectionState.status == "Not connected"
+        
         Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.errorContainer,
-            tonalElevation = 4.dp
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(),
+            color = when {
+                isConnected -> Color(0xFFE8F5E9)
+                isChecking -> Color(0xFFFFF9C4)
+                else -> MaterialTheme.colorScheme.errorContainer
+            },
+            tonalElevation = 2.dp
         ) {
             Row(
                 modifier = Modifier
@@ -81,25 +103,70 @@ fun ConnectionStatusBanner(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "Warning",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(
+                                color = when {
+                                    isConnected -> Color(0xFF4CAF50)
+                                    isChecking -> Color(0xFFFFC107)
+                                    else -> Color(0xFFF44336)
+                                },
+                                shape = CircleShape
+                            )
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        "Device unreachable",
+                        when {
+                            isChecking -> "Checking connection..."
+                            isConnected -> "Device Connected"
+                            else -> "Disconnected"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        fontWeight = FontWeight.Medium
                     )
                 }
-                Button(
-                    onClick = onRetry,
-                    enabled = !isChecking,
-                    modifier = Modifier.height(36.dp)
-                ) {
-                    Text(if (isChecking) "Checking..." else "Retry")
+                
+                when {
+                    isConnected -> {
+                        OutlinedButton(
+                            onClick = onClose,
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PowerSettingsNew,
+                                contentDescription = "Disconnect",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Close")
+                        }
+                    }
+                    isDisconnected && !isChecking -> {
+                        Button(
+                            onClick = onRetry,
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Connect",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Connect")
+                        }
+                    }
+                    isChecking -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
                 }
             }
         }
@@ -113,10 +180,14 @@ fun AppNavigation() {
     val connectionState by connectionViewModel.connectionState.collectAsState()
     val isChecking by connectionViewModel.isChecking.collectAsState()
     
+    val isBannerCollapsed = false  // Banner always visible
+    
     val navController = rememberNavController()
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    
+    val showBanner = currentRoute == "visual"
 
     Scaffold(
         topBar = {
@@ -124,21 +195,19 @@ fun AppNavigation() {
                 TopAppBar(
                     title = { Text("TruVision") }
                 )
-                ConnectionStatusBanner(
-                    connectionState = connectionState,
-                    isChecking = isChecking,
-                    onRetry = { connectionViewModel.checkConnection() }
-                )
+                if (showBanner) {
+                    ConnectionStatusBanner(
+                        connectionState = connectionState,
+                        isChecking = isChecking,
+                        onRetry = { connectionViewModel.checkConnection() },
+                        onClose = { connectionViewModel.disconnect() },
+                        isCollapsed = isBannerCollapsed
+                    )
+                }
             }
         },
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(
-                    selected = currentRoute == "connection",
-                    onClick = { navController.navigate("connection") { launchSingleTop = true } },
-                    icon = { Text("📱") },
-                    label = { Text("Connect") }
-                )
                 NavigationBarItem(
                     selected = currentRoute == "visual",
                     onClick = { navController.navigate("visual") { launchSingleTop = true } },
@@ -150,6 +219,12 @@ fun AppNavigation() {
                     onClick = { navController.navigate("results") { launchSingleTop = true } },
                     icon = { Text("📊") },
                     label = { Text("Results") }
+                )
+                NavigationBarItem(
+                    selected = currentRoute == "analysis",
+                    onClick = { navController.navigate("analysis") { launchSingleTop = true } },
+                    icon = { Text("📈") },
+                    label = { Text("Analysis") }
                 )
                 NavigationBarItem(
                     selected = currentRoute == "history",
@@ -168,7 +243,7 @@ fun AppNavigation() {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = "connection",
+            startDestination = "visual",
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("results/{job_id}") { backStackEntry ->
@@ -178,7 +253,7 @@ fun AppNavigation() {
             composable("results") { ResultsScreen(jobId = null) }
             composable("visual") { VisualScreen(navController = navController) }
             composable("analysis") { AnalysisScreen() }
-            composable("history") { HistoryScreen() }
+            composable("history") { HistoryScreen(navController) }
             composable("settings") { SettingsScreen() }
             composable("connection") { ConnectionScreen() }
         }
@@ -215,14 +290,47 @@ fun ResultsScreen(jobId: String?) {
         } else {
             when {
                 jobState.error != null -> {
-                    Text(
-                        "Error: ${jobState.error}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.retryPolling() }) {
-                        Text("Retry")
+                    var showErrorDialog by remember { mutableStateOf(true) }
+                    
+                    if (showErrorDialog) {
+                        com.truvision.app.ui.common.ErrorDialog(
+                            title = "Detection Failed",
+                            message = jobState.error ?: "Unknown error occurred",
+                            onDismiss = { showErrorDialog = false },
+                            onRetry = { viewModel.retryPolling() },
+                            showRetry = true
+                        )
+                    }
+                    
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Error",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "Detection Failed",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            jobState.error ?: "Unknown error",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { viewModel.retryPolling() }) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retry")
+                        }
                     }
                 }
                 jobState.isPolling && jobState.status == "running" -> {
@@ -396,69 +504,100 @@ fun VisualScreen(navController: androidx.navigation.NavController) {
     val viewModel: VisualViewModel = viewModel()
     val captureState by viewModel.captureState.collectAsState()
     
+    val toastState = com.truvision.app.ui.common.rememberToastState()
+    var selectedTab by remember { mutableStateOf(0) }
+    var preloadedImage by remember { mutableStateOf<String?>(null) }
+    
     LaunchedEffect(captureState) {
         if (captureState is CaptureState.Success) {
             val jobId = (captureState as CaptureState.Success).jobId
             navController.navigate("results/$jobId")
+            toastState.show("Capture started successfully!", com.truvision.app.ui.common.ToastType.SUCCESS)
             viewModel.resetState()
         }
     }
     
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("Visual Capture", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        when (val state = captureState) {
-            is CaptureState.Idle -> {
-                Text(
-                    "Ready to capture microplastic sample",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-            is CaptureState.Starting -> {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Starting capture...")
-            }
-            is CaptureState.Error -> {
-                Text(
-                    state.message,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { viewModel.resetState() }) {
-                    Text("Dismiss")
-                }
-            }
-            is CaptureState.Success -> {
-                Text("Navigating to results...")
-            }
+    LaunchedEffect(captureState) {
+        val state = captureState
+        if (state is CaptureState.Error) {
+            toastState.show(state.message, com.truvision.app.ui.common.ToastType.ERROR)
         }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Button(
-            onClick = { viewModel.startCapture() },
-            modifier = Modifier.fillMaxWidth(0.6f),
-            enabled = captureState is CaptureState.Idle
+    }
+    
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(
+            selectedTabIndex = selectedTab,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Start Capture")
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { 
+                    Text(
+                        "Capture",
+                        fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
+                    ) 
+                }
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
+                text = { 
+                    Text(
+                        "Browse",
+                        fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
+                    ) 
+                }
+            )
+            Tab(
+                selected = selectedTab == 2,
+                onClick = { selectedTab = 2 },
+                text = { 
+                    Text(
+                        "Analyze",
+                        fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal
+                    ) 
+                }
+            )
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        when (selectedTab) {
+            0 -> {
+                com.truvision.app.ui.visual.CaptureTab(
+                    onCaptureClick = { viewModel.startCapture() },
+                    captureState = when (captureState) {
+                        is CaptureState.Idle -> "Idle"
+                        is CaptureState.Starting -> "Starting"
+                        is CaptureState.Error -> "Error"
+                        is CaptureState.Success -> "Success"
+                    }
+                )
+            }
+            1 -> {
+                com.truvision.app.ui.visual.BrowseTab(
+                    onAnalyzeClick = { imageId ->
+                        preloadedImage = imageId
+                        selectedTab = 2
+                    }
+                )
+            }
+            2 -> {
+                com.truvision.app.ui.visual.AnalyzeTab(
+                    preloadedImage = preloadedImage,
+                    onDetectClick = {
+                        viewModel.startCapture()
+                    }
+                )
+            }
+        }
         
-        Text(
-            "Flow: Visual -> POST /capture/start -> Navigate to Results -> Poll job",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = androidx.compose.ui.Alignment.BottomCenter
+        ) {
+            com.truvision.app.ui.common.ToastHost(toastState = toastState)
+        }
     }
 }
 
@@ -469,7 +608,7 @@ fun AnalysisScreen() {
 }
 
 @Composable
-fun HistoryScreen() {
+fun HistoryScreen(navController: androidx.navigation.NavController) {
     val viewModel: HistoryViewModel = viewModel()
     val historyState by viewModel.historyState.collectAsState()
     
@@ -484,9 +623,14 @@ fun HistoryScreen() {
         
         when (val state = historyState) {
             is HistoryState.Loading -> {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Loading samples...")
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(5) {
+                        com.truvision.app.ui.common.SkeletonLoader()
+                    }
+                }
             }
             is HistoryState.Success -> {
                 if (state.samples.isEmpty()) {
@@ -503,7 +647,11 @@ fun HistoryScreen() {
                         items(state.samples.size) { index ->
                             val sample = state.samples[index]
                             Card(
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        navController.navigate("results/${sample.jobId}")
+                                    }
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text("Job ID: ${sample.jobId}", style = MaterialTheme.typography.titleMedium)
@@ -521,14 +669,47 @@ fun HistoryScreen() {
                 }
             }
             is HistoryState.Error -> {
-                Text(
-                    state.message,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { viewModel.fetchSamples() }) {
-                    Text("Retry")
+                var showErrorDialog by remember { mutableStateOf(true) }
+                
+                if (showErrorDialog) {
+                    com.truvision.app.ui.common.ErrorDialog(
+                        title = "Failed to Load History",
+                        message = state.message,
+                        onDismiss = { showErrorDialog = false },
+                        onRetry = { viewModel.fetchSamples() },
+                        showRetry = true
+                    )
+                }
+                
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Error",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Failed to Load History",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        state.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.fetchSamples() }) {
+                        Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Retry")
+                    }
                 }
             }
         }

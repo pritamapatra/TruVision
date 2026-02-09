@@ -27,7 +27,8 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         Log.d("ConnectionViewModel", "ViewModel initialized")
-        checkConnection()
+        _connectionState.value = ConnectionState(status = "Disconnected")
+        Log.d("ConnectionViewModel", "Initial state set to Disconnected")
     }
 
     fun checkConnection() {
@@ -50,6 +51,26 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             )
             
             Log.d("ConnectionViewModel", "Updated state: ${_connectionState.value}")
+            _isChecking.value = false
+        }
+    }
+
+    fun disconnect() {
+        Log.d("ConnectionViewModel", "disconnect() called")
+        viewModelScope.launch {
+            _isChecking.value = true
+            Log.d("ConnectionViewModel", "Starting disconnect...")
+            
+            repository.disconnect()
+            
+            _connectionState.value = ConnectionState(
+                status = "Disconnected",
+                baseUrl = null,
+                httpCode = null,
+                latencyMs = null
+            )
+            
+            Log.d("ConnectionViewModel", "Updated state to Disconnected")
             _isChecking.value = false
         }
     }
