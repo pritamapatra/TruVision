@@ -7,10 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.ZoomIn
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,20 +16,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun AnalyzeTab(
     preloadedImage: String?,
-    onDetectClick: () -> Unit
+    viewModel: AnalyzeViewModel = viewModel()
 ) {
-    var showDetection by remember { mutableStateOf(true) }
-    var isDetecting by remember { mutableStateOf(false) }
-    
-    LaunchedEffect(Unit) {
-        if (preloadedImage != null) {
-            isDetecting = false
-        }
-    }
+    val analyzeState by viewModel.analyzeState.collectAsState()
     
     Column(
         modifier = Modifier
@@ -40,6 +31,7 @@ fun AnalyzeTab(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        // Analysis Control Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -63,10 +55,12 @@ fun AnalyzeTab(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
+                // Detect Particles Button
                 Button(
                     onClick = { 
-                        isDetecting = true
-                        onDetectClick()
+                        if (preloadedImage != null) {
+                            viewModel.analyzeImage(preloadedImage)
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -74,39 +68,63 @@ fun AnalyzeTab(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     ),
-                    enabled = !isDetecting
+                    enabled = preloadedImage != null && analyzeState !is AnalyzeState.Analyzing
                 ) {
-                    if (isDetecting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 3.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Detecting...",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Detect",
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Detect Particles",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                    when (analyzeState) {
+                        is AnalyzeState.Analyzing -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 3.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Analyzing...",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        is AnalyzeState.Success -> {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Success",
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Analysis Complete",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        else -> {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Detect",
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Detect Particles",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
                     }
                 }
                 
+                // Show preloaded image info
                 if (preloadedImage != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Image preloaded: $preloadedImage",
+                        text = "Image: $preloadedImage",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Select an image from Browse tab first",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -114,6 +132,7 @@ fun AnalyzeTab(
         
         Spacer(modifier = Modifier.height(16.dp))
         
+        // Detection Results Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -127,31 +146,21 @@ fun AnalyzeTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Analysis Results",
+                        text = "Detection Results",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(onClick = { showDetection = !showDetection }) {
-                            Icon(
-                                imageVector = if (showDetection) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (showDetection) "Hide Detection" else "Show Detection",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(onClick = { }) {
-                            Icon(
-                                imageVector = Icons.Default.ZoomIn,
-                                contentDescription = "Magnify",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(onClick = { }) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "Export",
-                                tint = MaterialTheme.colorScheme.primary
+                    // Show particle count if available
+                    if (analyzeState is AnalyzeState.Success) {
+                        val successState = analyzeState as AnalyzeState.Success
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Text(
+                                text = "${successState.detectedCount} particles",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White
                             )
                         }
                     }
@@ -159,137 +168,171 @@ fun AnalyzeTab(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
+                // Results Display
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(300.dp)
-                        .background(
-                            color = Color(0xFFE8F4F8),
-                            shape = RoundedCornerShape(8.dp)
-                        ),
+                        .heightIn(min = 200.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isDetecting) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(60.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                strokeWidth = 6.dp
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Running detection...",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(
-                                modifier = Modifier.width(200.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                    when (val state = analyzeState) {
+                        is AnalyzeState.Idle -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_menu_view),
+                                    contentDescription = "Ready",
+                                    modifier = Modifier.size(60.dp),
+                                    tint = Color(0xFF607D8B)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Select an image and tap Detect Particles",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.Gray
+                                )
+                            }
                         }
-                    } else if (showDetection) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                painter = painterResource(android.R.drawable.ic_menu_view),
-                                contentDescription = "Detection visualization",
-                                modifier = Modifier.size(80.dp),
-                                tint = Color(0xFF607D8B)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Detection overlay will appear here",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray
-                            )
+                        
+                        is AnalyzeState.Analyzing -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(60.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    strokeWidth = 6.dp
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Running YOLO detection...",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LinearProgressIndicator(
+                                    modifier = Modifier.width(200.dp),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
-                    }
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Detection Legend",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                if (isDetecting) {
-                    repeat(5) { index ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(60.dp)
-                                    .height(16.dp)
-                                    .background(
-                                        color = Color(0xFFE0E0E0),
-                                        shape = RoundedCornerShape(4.dp)
+                        
+                        is AnalyzeState.Success -> {
+                            Column(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                // Detection Summary
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Job ID",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.Gray
+                                        )
+                                        Text(
+                                            text = state.jobId,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = "Timestamp",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.Gray
+                                        )
+                                        Text(
+                                            text = state.timestamp,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+                                HorizontalDivider()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                
+                                // Detection List
+                                Text(
+                                    text = "Detected Polymers",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                if (state.detections.isEmpty()) {
+                                    Text(
+                                        text = "No microplastics detected",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.Gray
                                     )
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .width(100.dp)
-                                    .height(16.dp)
-                                    .background(
-                                        color = Color(0xFFE0E0E0),
-                                        shape = RoundedCornerShape(4.dp)
-                                    )
-                            )
+                                } else {
+                                    state.detections.forEachIndexed { index, detection ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row {
+                                                Text(
+                                                    text = "${index + 1}.",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = Color.Gray,
+                                                    modifier = Modifier.width(30.dp)
+                                                )
+                                                Text(
+                                                    text = detection.polymerType,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                            Text(
+                                                text = "${(detection.confidence * 100).toInt()}%",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                        if (index < state.detections.size - 1) {
+                                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    }
-                } else {
-                    val detectionItems = listOf(
-                        Triple("PET", "150μm", "98%"),
-                        Triple("PE", "120μm", "94%"),
-                        Triple("PS", "110μm", "91%"),
-                        Triple("PVC", "135μm", "89%"),
-                        Triple("Nylon", "145μm", "96%")
-                    )
-                    
-                    detectionItems.forEach { (type, size, confidence) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = type,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "$size • $confidence",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
-                        }
-                        if (type != "Nylon") {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        
+                        is AnalyzeState.Error -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_dialog_alert),
+                                    contentDescription = "Error",
+                                    modifier = Modifier.size(60.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = state.message,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = { viewModel.resetState() }
+                                ) {
+                                    Text("Retry")
+                                }
+                            }
                         }
                     }
                 }

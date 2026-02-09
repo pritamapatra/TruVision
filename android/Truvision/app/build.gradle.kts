@@ -59,6 +59,14 @@ dependencies {
     // Week 4: Retrofit + Moshi for API client
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.9.0")
+
+    // Coil for image loading
+    implementation("io.coil-kt:coil-compose:2.5.0") {
+            attributes {
+                attribute(Usage.USAGE_ATTRIBUTE.attribute, Usage.JVM)
+            }
+        }
+
     implementation("com.squareup.moshi:moshi:1.15.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

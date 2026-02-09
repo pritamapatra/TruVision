@@ -24,7 +24,7 @@ class VisualViewModel(application: Application) : AndroidViewModel(application) 
     private val _captureState = MutableStateFlow<CaptureState>(CaptureState.Idle)
     val captureState: StateFlow<CaptureState> = _captureState.asStateFlow()
     
-    fun startCapture() {
+    fun startCapture(onCaptureComplete: (String?, String?) -> Unit) {
         viewModelScope.launch {
             _captureState.value = CaptureState.Starting
             
@@ -32,20 +32,26 @@ class VisualViewModel(application: Application) : AndroidViewModel(application) 
                 val baseUrl = repository.getCurrentBaseUrl()
                 val api = RetrofitClient.getApi(baseUrl)
                 
-                val response = api.startCapture()
+                val response = api.captureImage()
                 
                 if (response.isSuccessful && response.body() != null) {
-                    val jobId = response.body()!!.jobId
-                    _captureState.value = CaptureState.Success(jobId)
+                    val imageId = response.body()!!.imageId
+                    val message = response.body()!!.message
+                    _captureState.value = CaptureState.Idle
+                    onCaptureComplete(imageId, message)
                 } else {
-                    _captureState.value = CaptureState.Error(
-                        "Failed to start capture: ${response.code()}"
-                    )
+                    val errorMsg = when (response.code()) {
+                        503 -> "Camera unavailable. Check USB microscope connection."
+                        500 -> "Raspberry Pi disconnected. Reconnect device."
+                        else -> "Capture failed: ${response.code()}"
+                    }
+                    _captureState.value = CaptureState.Error(errorMsg)
+                    onCaptureComplete(null, errorMsg)
                 }
             } catch (e: Exception) {
-                _captureState.value = CaptureState.Error(
-                    "Network error: ${e.message ?: "Unknown error"}"
-                )
+                val errorMsg = "Network error: ${e.message ?: "Pi not responding"}"
+                _captureState.value = CaptureState.Error(errorMsg)
+                onCaptureComplete(null, errorMsg)
             }
         }
     }

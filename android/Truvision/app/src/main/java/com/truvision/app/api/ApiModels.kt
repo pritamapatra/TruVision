@@ -10,6 +10,27 @@ data class CaptureStartResponse(
 )
 
 @JsonClass(generateAdapter = true)
+data class CaptureImageResponse(
+    @Json(name = "image_id") val imageId: String,
+    @Json(name = "message") val message: String
+)
+
+
+
+@JsonClass(generateAdapter = true)
+data class AnalyzeImageRequest(
+    @Json(name = "image_id") val imageId: String
+)
+
+@JsonClass(generateAdapter = true)
+data class AnalyzeImageResponse(
+    @Json(name = "job_id") val jobId: String,
+    @Json(name = "status") val status: String,
+    @Json(name = "message") val message: String
+)
+
+
+@JsonClass(generateAdapter = true)
 data class Detection(
     @Json(name = "id") val id: Int,
     @Json(name = "polymer_type") val polymerType: String,
@@ -25,6 +46,7 @@ data class JobStatusResponse(
     @Json(name = "image_path") val imagePath: String? = null,
     @Json(name = "detections") val detections: List<Detection>? = null
 )
+
 
 @JsonClass(generateAdapter = true)
 data class ApiError(

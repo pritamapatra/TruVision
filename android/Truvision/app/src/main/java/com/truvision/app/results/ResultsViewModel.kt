@@ -153,10 +153,15 @@ class ResultsViewModel(application: Application) : AndroidViewModel(application)
                         ).show()
                     }
                 } else {
+                    val errorMsg = when (response.code()) {
+                        404 -> "Sample not found"
+                        409 -> "Sample not analyzed yet. Only completed samples can be exported."
+                        else -> "Export failed (Error ${response.code()})"
+                    }
                     withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(
                             getApplication(),
-                            "Export failed",
+                            errorMsg,
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
