@@ -20,22 +20,28 @@ def init_db():
             detections TEXT,
             capture_timestamp TEXT,
             capture_method TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            latitude REAL,
+            longitude REAL,
+            accuracy REAL,
+            location_method TEXT
         )
     ''')
     conn.commit()
     conn.close()
     print(f"Database initialized: {DB_FILE}")
 
-def save_sample(job_id: str, status: str = "pending"):
+def save_sample(job_id: str, status: str = "pending", latitude: Optional[float] = None, 
+                longitude: Optional[float] = None, accuracy: Optional[float] = None, 
+                location_method: Optional[str] = None):
     """Save a new sample to the database"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     timestamp = datetime.now().isoformat()
     cursor.execute('''
-        INSERT INTO samples (job_id, timestamp, status, detected_count, image_path, detections, capture_timestamp, capture_method, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (job_id, timestamp, status, None, None, None, None, None, timestamp))
+        INSERT INTO samples (job_id, timestamp, status, detected_count, image_path, detections, capture_timestamp, capture_method, created_at, latitude, longitude, accuracy, location_method)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (job_id, timestamp, status, None, None, None, None, None, timestamp, latitude, longitude, accuracy, location_method))
     conn.commit()
     conn.close()
 
@@ -61,7 +67,7 @@ def get_all_samples() -> List[Dict]:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path, capture_method FROM samples ORDER BY created_at DESC')
+    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path, capture_method, latitude, longitude, accuracy, location_method FROM samples ORDER BY created_at DESC')
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -71,7 +77,7 @@ def get_sample(job_id: str) -> Optional[Dict]:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path, detections, capture_timestamp, capture_method FROM samples WHERE job_id = ?', (job_id,))
+    cursor.execute('SELECT job_id, timestamp, status, detected_count, image_path, detections, capture_timestamp, capture_method, latitude, longitude, accuracy, location_method FROM samples WHERE job_id = ?', (job_id,))
     row = cursor.fetchone()
     conn.close()
     if row:

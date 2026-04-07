@@ -1,14 +1,24 @@
 package com.truvision.app
+typealias Sample = SampleResponse
+
 import com.truvision.app.BuildConfig
 
 import android.os.Bundle
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,9 +36,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.OutlinedTextField
@@ -37,10 +44,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.res.painterResource
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.BorderStroke
-import com.truvision.app.api.SampleResponse
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
@@ -63,6 +66,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 
+
+private val okHttpClient = OkHttpClient.Builder()
+    .addInterceptor(HttpLoggingInterceptor().apply {
+        level = HttpLoggingInterceptor.Level.BODY
+    })
+    .build()
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -496,8 +505,15 @@ fun ResultsScreen(jobId: String?) {
 
 @Composable
 fun VisualScreen(navController: androidx.navigation.NavController) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val viewModel: VisualViewModel = viewModel()
     val captureState by viewModel.captureState.collectAsState()
+    
+    LaunchedEffect(Unit) {
+        val repository = com.truvision.app.connectivity.ConnectionRepository(context.applicationContext as android.app.Application)
+        val baseUrl = repository.getCurrentBaseUrl()
+        viewModel.setPreviewUrl(baseUrl)
+    }
     
     val toastState = com.truvision.app.ui.common.rememberToastState()
     var selectedTab by remember { mutableStateOf(0) }
@@ -559,9 +575,7 @@ fun VisualScreen(navController: androidx.navigation.NavController) {
         
         when (selectedTab) {
             0 -> {
-                com.truvision.app.ui.visual.CaptureTab(
-                    viewModel = viewModel
-                )
+                com.truvision.app.ui.visual.CaptureTab()
             }
             1 -> {
                 com.truvision.app.ui.visual.BrowseTab(
@@ -594,14 +608,160 @@ fun AnalysisScreen() {
 }
 
 @Composable
-fun SampleCard(
-    sample: SampleResponse,
-    onExportClick: () -> Unit,
-    onClick: () -> Unit
-) {
-    val riskLevel = when (sample.detectedCount ?: 0) {
-        in 30..Int.MAX_VALUE -> "High Risk" to Color(0xFFE57373)
-        in 15..29 -> "Medium Risk" to Color(0xFFFFA726)
+fun HistoryScreen(navController: androidx.navigation.NavController) {
+    val viewModel: HistoryViewModel = viewModel()
+    val historyState by viewModel.historyState.collectAsState()
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF5F5F5))
+    ) {
+        when (val state = historyState) {
+            is HistoryState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            is HistoryState.Success -> {
+                if (state.samples.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "No samples yet",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        item {
+                            SummaryCardsRow(samples = state.samples)
+                        }
+                        
+                        item {
+                            FilterRow()
+                        }
+                        
+                        items(state.samples.size) { index ->
+                            val sample = state.samples[index]
+                            SampleCard(
+                                sample = sample,
+                                onExportClick = { /* TODO: Export */ },
+                                onClick = { navController.navigate("results/${sample.jobId}") }
+                            )
+                        }
+                        
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                "${state.samples.size} samples shown",
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(80.dp))
+                        }
+                    }
+                }
+            }
+            is HistoryState.Error -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(state.message, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SummaryCardsRow(samples: List<Sample>) {
+    val totalSamples = samples.size
+    val highRisk = samples.count { (it.detectedCount ?: 0) > 20 }
+    val exported = samples.count { it.status == "exported" }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        SummaryCard(value = totalSamples, label = "Total Samples", color = Color(0xFF2196F3))
+        SummaryCard(value = highRisk, label = "High Risk", color = Color(0xFFFFA726))
+        SummaryCard(value = exported, label = "Exported", color = Color(0xFF66BB6A))
+    }
+}
+
+@Composable
+fun SummaryCard(value: Int, label: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray
+        )
+    }
+}
+
+@Composable
+fun FilterRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF5F5F5))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        FilterChip(text = "All Risk", modifier = Modifier.weight(1f))
+        FilterChip(text = "By Date", modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+fun FilterChip(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, Color(0xFFE0E0E0))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(android.R.drawable.ic_menu_sort_by_size),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = Color.Gray
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                painter = painterResource(android.R.drawable.arrow_down_float),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = Color.Gray
+            )
+        }
+    }
+}
+
+@Composable
+fun SampleCard(sample: Sample, onExportClick: () -> Unit, onClick: () -> Unit) {
+    val riskLevel = when {
+        (sample.detectedCount ?: 0) > 30 -> "High Risk" to Color(0xFFE57373)
+        (sample.detectedCount ?: 0) > 15 -> "Medium Risk" to Color(0xFFFFA726)
         else -> "Low Risk" to Color(0xFF66BB6A)
     }
     
@@ -671,30 +831,33 @@ fun SampleCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    "Particles: ${sample.detectedCount ?: 0}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    "Primary: ${if ((sample.detectedCount ?: 0) > 0) sample.primaryPolymer ?: "PET" else "N/A"}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
-                )
+                Column {
+                    Text(
+                        "Particles: ${sample.detectedCount ?: 0}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "Primary: ${if ((sample.detectedCount ?: 0) > 0) "PET" else "N/A"}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                }
             }
             
             if (sample.latitude != null && sample.longitude != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Location: ${String.format("%.4f", sample.latitude)}N, ${String.format("%.4f", sample.longitude)}E",
+                    "Location: ${String.format("%.4f", sample.latitude)}° N, ${String.format("%.4f", sample.longitude)}° E",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
-            
             if (sample.status == "exported") {
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     "Exported",
                     modifier = Modifier
@@ -704,6 +867,7 @@ fun SampleCard(
                     color = Color.Gray
                 )
             } else {
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
@@ -727,188 +891,6 @@ fun SampleCard(
 }
 
 @Composable
-fun HistoryScreen(navController: androidx.navigation.NavController){
-    val viewModel: HistoryViewModel = viewModel()
-    val historyState by viewModel.historyState.collectAsState()
-    
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("History", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        when (val state = historyState) {
-            is HistoryState.Loading -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(5) {
-                        com.truvision.app.ui.common.SkeletonLoader()
-                    }
-                }
-            }
-            is HistoryState.Success -> {
-                if (state.samples.isEmpty()) {
-                    Text(
-                        "No samples yet",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        item {
-                            SummaryCardsRow(samples = state.samples)
-                        }
-                        
-                        item {
-                            FilterRow()
-                        }
-                        
-                        items(state.samples.size) { index ->
-                            val sample = state.samples[index]
-                            SampleCard(
-                                sample = sample,
-                                onExportClick = {
-                                    // TODO: Implement export for individual sample
-                                },
-                                onClick = {
-                                    navController.navigate("results/${sample.jobId}")
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-            is HistoryState.Error -> {
-                var showErrorDialog by remember { mutableStateOf(true) }
-                
-                if (showErrorDialog) {
-                    com.truvision.app.ui.common.ErrorDialog(
-                        title = "Failed to Load History",
-                        message = state.message,
-                        onDismiss = { showErrorDialog = false },
-                        onRetry = { viewModel.fetchSamples() },
-                        showRetry = true
-                    )
-                }
-                
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "Error",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "Failed to Load History",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        state.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.fetchSamples() }) {
-                        Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Retry")
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-@Composable
-fun SummaryCardsRow(samples: List<com.truvision.app.api.SampleResponse>) {
-    val totalSamples = samples.size
-    val highRisk = samples.count { (it.detectedCount ?: 0) > 20 }
-    val exported = samples.count { it.status == "exported" }
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
-        SummaryCard(value = totalSamples, label = "Total Samples", color = Color(0xFF2196F3))
-        SummaryCard(value = highRisk, label = "High Risk", color = Color(0xFFFFA726))
-        SummaryCard(value = exported, label = "Exported", color = Color(0xFF66BB6A))
-    }
-}
-
-@Composable
-fun SummaryCard(value: Int, label: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value.toString(),
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = color
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
-        )
-    }
-}
-
-@Composable
-fun FilterRow() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFF5F5F5))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        FilterChip(text = "All Risk", modifier = Modifier.weight(1f))
-        FilterChip(text = "By Date", modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-fun FilterChip(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, Color(0xFFE0E0E0))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text, style = MaterialTheme.typography.bodyMedium)
-            Icon(
-                painter = painterResource(android.R.drawable.arrow_down_float),
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = Color.Gray
-            )
-        }
-    }
-}
-
 @Composable
 fun SettingsScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1084,3 +1066,4 @@ fun ScreenPlaceholder(title: String, content: String) {
         Text(content)
     }
 }
+

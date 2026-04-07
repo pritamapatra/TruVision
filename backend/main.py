@@ -24,16 +24,49 @@ async def startup():
 async def health():
     return {"status": "ok"}
 
+@app.get("/preview")
+async def get_preview():
+    """Capture and return live preview image from USB microscope"""
+    import subprocess
+    import os
+    from fastapi.responses import FileResponse
+    
+    preview_path = "/tmp/preview.jpg"
+    
+    try:
+        # Capture image using fswebcam
+        subprocess.run(
+            ["fswebcam", "-r", "640x480", "--no-banner", "-q", preview_path],
+            check=True,
+            timeout=3
+        )
+        
+        if os.path.exists(preview_path):
+            return FileResponse(preview_path, media_type="image/jpeg")
+        else:
+            raise HTTPException(status_code=503, detail="Camera capture failed")
+            
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=503, detail="Camera timeout")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Camera error: {str(e)}")
+
+
 @app.post("/capture/start")
-async def start_capture():
+async def start_capture(
+    latitude: float = None,
+    longitude: float = None, 
+    accuracy: float = None,
+    location_method: str = None
+):
     import uuid
     job_id = f"job-{uuid.uuid4().hex[:8]}"
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO samples (job_id, status, timestamp, created_at) VALUES (?, ?, ?, ?)",
-        (job_id, "pending", datetime.now().isoformat(), datetime.now().isoformat())
+        "INSERT INTO samples (job_id, status, timestamp, created_at, latitude, longitude, accuracy, location_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (job_id, "pending", datetime.now().isoformat(), datetime.now().isoformat(), latitude, longitude, accuracy, location_method)
     )
     conn.commit()
     conn.close()
@@ -164,6 +197,14 @@ def get_samples():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.get("/samples/{job_id}/image")
+def get_sample_image(job_id: str):
+    """Serve the captured JPEG for a given job"""
+    img_path = SAMPLES_DIR / job_id / "captured.jpg"
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(str(img_path), media_type="image/jpeg")
 
 @app.delete("/samples/{job_id}")
 async def delete_sample(job_id: str):

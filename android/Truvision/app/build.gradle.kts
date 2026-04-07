@@ -61,11 +61,7 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-moshi:2.9.0")
 
     // Coil for image loading
-    implementation("io.coil-kt:coil-compose:2.5.0") {
-            attributes {
-                attribute(Usage.USAGE_ATTRIBUTE.attribute, Usage.JVM)
-            }
-        }
+    implementation("io.coil-kt:coil-compose:2.5.0")
 
     implementation("com.squareup.moshi:moshi:1.15.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
@@ -85,3 +81,9 @@ dependencies {
 // Uses androidx.navigation:navigation-compose via version catalog (libs.androidx.navigation.compose).
 
     // Material Icons Extended (for more icons)
+
+dependencies {
+    // ... existing dependencies
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+}

@@ -4,7 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import coil.compose.AsyncImage
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,6 +29,27 @@ fun CaptureTab(
     viewModel: VisualViewModel = viewModel()
 ) {
     val captureState by viewModel.captureState.collectAsState()
+    val previewUrl by viewModel.previewUrl.collectAsState()
+    val previewTick by viewModel.previewTick.collectAsState()
+    val previewBitmap by viewModel.previewBitmap.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                viewModel.startPreview()
+            } else if (event == Lifecycle.Event.ON_STOP) {
+                viewModel.stopPreview()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.stopPreview()
+        }
+    }
+
     var capturedImageId by remember { mutableStateOf<String?>(null) }
     var showSuccessToast by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -101,22 +129,32 @@ fun CaptureTab(
                                 }
                             }
                             else -> {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        painter = painterResource(android.R.drawable.ic_menu_camera),
-                                        contentDescription = "Live camera feed",
-                                        modifier = Modifier.size(80.dp),
-                                        tint = Color(0xFF607D8B)
+                                val bitmap = previewBitmap
+                                if (bitmap != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = bitmap,
+                                        contentDescription = "Live preview",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
                                     )
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        text = "Live camera feed",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = Color.Gray
-                                    )
+                                } else {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(android.R.drawable.ic_menu_camera),
+                                            contentDescription = "Live camera feed",
+                                            modifier = Modifier.size(80.dp),
+                                            tint = Color(0xFF607D8B)
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(
+                                            text = "Camera connecting...",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = Color.Gray
+                                        )
+                                    }
                                 }
                             }
                         }

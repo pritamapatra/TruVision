@@ -1,5 +1,8 @@
 package com.truvision.app.ui.visual
 
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.truvision.app.visual.VisualViewModel
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,21 +19,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun BrowseTab(
-    onAnalyzeClick: (String) -> Unit
+    onAnalyzeClick: (String) -> Unit,
+    viewModel: VisualViewModel = viewModel()
 ) {
     var selectedImages by remember { mutableStateOf(setOf<String>()) }
-    
-    val sampleImages = remember {
-        listOf(
-            ImageItem("Sample_001.jpg", "2024-01-15 14:30:22", "Analyzed", 5),
-            ImageItem("Sample_002.jpg", "2024-01-15 14:25:18", "Pending", null),
-            ImageItem("Sample_003.jpg", "2024-01-15 14:20:45", "Analyzed", 8),
-            ImageItem("Sample_004.jpg", "2024-01-15 14:15:32", "Analyzed", 3)
+    val rawSamples by viewModel.samples.collectAsState()
+    val isLoading by viewModel.samplesLoading.collectAsState()
+    val baseUrl by viewModel.baseUrl.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadSamples()
+    }
+
+    val sampleImages = rawSamples.map { s ->
+        ImageItem(
+            filename = s.jobId ?: "unknown",
+            timestamp = (s.timestamp ?: "").take(19).replace("T", " "),
+            status = if (s.status == "completed") "Analyzed" else "Pending",
+            particleCount = s.detectedCount,
+            imageUrl = if (baseUrl != null && s.jobId != null) "$baseUrl/samples/${s.jobId}/image" else null
         )
     }
     
@@ -73,7 +89,7 @@ fun BrowseTab(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Image Gallery (" + sampleImages.size.toString() + ")",
+                        text = "Image Gallery (" + sampleImages.size.toString() + ")" + if (isLoading) " ⟳" else "",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -128,6 +144,7 @@ fun BrowseTab(
                         ImageCard(
                             image = sampleImages[index],
                             isSelected = selectedImages.contains(sampleImages[index].filename),
+                            baseUrl = baseUrl,
                             onSelectionChange = { selected ->
                                 selectedImages = if (selected) {
                                     selectedImages + sampleImages[index].filename
@@ -147,6 +164,7 @@ fun BrowseTab(
 fun ImageCard(
     image: ImageItem,
     isSelected: Boolean,
+    baseUrl: String?,
     onSelectionChange: (Boolean) -> Unit
 ) {
     Card(
@@ -165,12 +183,27 @@ fun ImageCard(
                     .background(Color(0xFFE8F4F8)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(android.R.drawable.ic_menu_camera),
-                    contentDescription = "Image placeholder",
-                    modifier = Modifier.size(48.dp),
-                    tint = Color(0xFF607D8B)
-                )
+                val context = LocalContext.current
+                if (image.imageUrl != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(image.imageUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Captured sample",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        error = painterResource(android.R.drawable.ic_menu_camera),
+                        placeholder = painterResource(android.R.drawable.ic_menu_camera)
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(android.R.drawable.ic_menu_camera),
+                        contentDescription = "Image placeholder",
+                        modifier = Modifier.size(48.dp),
+                        tint = Color(0xFF607D8B)
+                    )
+                }
             }
             
             if (isSelected) {
@@ -238,5 +271,6 @@ data class ImageItem(
     val filename: String,
     val timestamp: String,
     val status: String,
-    val particleCount: Int?
+    val particleCount: Int?,
+    val imageUrl: String? = null
 )

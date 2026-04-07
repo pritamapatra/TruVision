@@ -18,6 +18,10 @@ interface TruVisionApi {
     @POST("capture")
     suspend fun captureImage(): Response<CaptureImageResponse>
     
+    @GET("preview")
+    @Streaming
+    fun getPreviewFrame(): Call<ResponseBody>
+
     @POST("analyze")
     suspend fun analyzeImage(@Body request: AnalyzeImageRequest): Response<AnalyzeImageResponse>
 
