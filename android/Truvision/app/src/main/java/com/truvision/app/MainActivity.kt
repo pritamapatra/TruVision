@@ -518,6 +518,12 @@ fun VisualScreen(navController: androidx.navigation.NavController) {
             toastState.show(state.message, com.truvision.app.ui.common.ToastType.ERROR)
         }
     }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 1) {
+            viewModel.loadSamples()
+        }
+    }
     
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(
