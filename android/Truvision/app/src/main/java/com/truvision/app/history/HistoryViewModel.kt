@@ -66,4 +66,46 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun exportSample(jobId: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val baseUrl = repository.getCurrentBaseUrl()
+                val api = RetrofitClient.getApi(baseUrl)
+                val call = api.exportJob(jobId)
+
+                val response = call.execute()
+                if (!response.isSuccessful || response.body() == null) {
+                    onResult(false, "Export failed (code ${response.code()})")
+                    return@launch
+                }
+
+                val body = response.body()!!
+                val context = getApplication<Application>().applicationContext
+                val downloads = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS
+                )
+                if (!downloads.exists()) {
+                    downloads.mkdirs()
+                }
+                val outFile = java.io.File(downloads, "truvision_export_${jobId}.zip")
+
+                body.byteStream().use { input ->
+                    java.io.FileOutputStream(outFile).use { output ->
+                        val buffer = ByteArray(8 * 1024)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                        }
+                        output.flush()
+                    }
+                }
+
+                onResult(true, "Exported to Downloads/${outFile.name}")
+            } catch (e: Exception) {
+                onResult(false, "Export error: ${e.message ?: "Unknown error"}")
+            }
+        }
+    }
+
 }

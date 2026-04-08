@@ -133,6 +133,21 @@ class VisualViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun deleteSamples(jobIds: Set<String>) {
+        viewModelScope.launch {
+            try {
+                val baseUrl = repository.getCurrentBaseUrl()
+                val api = RetrofitClient.getApi(baseUrl)
+                jobIds.forEach { jobId ->
+                    api.deleteSample(jobId)
+                }
+                loadSamples()
+            } catch (e: Exception) {
+                // keep existing list on error
+            }
+        }
+    }
+
     fun resetState() {
         _captureState.value = CaptureState.Idle
     }

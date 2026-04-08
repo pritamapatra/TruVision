@@ -194,10 +194,6 @@ def get_samples():
     samples = get_all_samples()
     return samples
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
 @app.get("/samples/{job_id}/image")
 def get_sample_image(job_id: str):
     """Serve the captured JPEG for a given job"""
@@ -208,30 +204,22 @@ def get_sample_image(job_id: str):
 
 @app.delete("/samples/{job_id}")
 async def delete_sample(job_id: str):
-    """Delete a sample and its associated files"""
     import shutil
-    
-    # Check if sample exists
-    sample = get_sample(job_id)
-    if not sample:
-        raise HTTPException(status_code=404, detail="Sample not found")
-    
-    # Delete from database
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM samples WHERE job_id = ?", (job_id,))
-    deleted_count = cursor.rowcount
-    conn.commit()
-    conn.close()
-    
-    # Delete files
-    job_dir = SAMPLES_DIR / job_id
-    if job_dir.exists():
-        shutil.rmtree(job_dir)
-        print(f"[Delete] Removed directory: {job_dir}")
-    
-    return {
-        "success": True,
-        "job_id": job_id,
-        "message": f"Sample {job_id} deleted successfully"
-    }
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM samples WHERE job_id = ?", (job_id,))
+        conn.commit()
+        conn.close()
+        job_dir = SAMPLES_DIR / job_id
+        if job_dir.exists():
+            shutil.rmtree(job_dir)
+        return {"status": "deleted", "job_id": job_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+

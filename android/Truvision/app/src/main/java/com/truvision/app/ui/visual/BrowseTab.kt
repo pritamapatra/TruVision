@@ -117,7 +117,10 @@ fun BrowseTab(
                         }
                         
                         Button(
-                            onClick = { },
+                            onClick = {
+                                viewModel.deleteSamples(selectedImages)
+                                selectedImages = emptySet()
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error
                             )

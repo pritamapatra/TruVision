@@ -736,6 +736,7 @@ fun SampleCard(
 fun HistoryScreen(navController: androidx.navigation.NavController){
     val viewModel: HistoryViewModel = viewModel()
     val historyState by viewModel.historyState.collectAsState()
+    val toastState = com.truvision.app.ui.common.rememberToastState()
     
     Column(
         modifier = Modifier
@@ -782,7 +783,18 @@ fun HistoryScreen(navController: androidx.navigation.NavController){
                             SampleCard(
                                 sample = sample,
                                 onExportClick = {
-                                    // TODO: Implement export for individual sample
+                                    val jobId = sample.jobId ?: ""
+                                    if (jobId.isNotEmpty()) {
+                                        viewModel.exportSample(jobId) { success, message ->
+                                            if (success) {
+                                                toastState.show(message, com.truvision.app.ui.common.ToastType.SUCCESS)
+                                            } else {
+                                                toastState.show(message, com.truvision.app.ui.common.ToastType.ERROR)
+                                            }
+                                        }
+                                    } else {
+                                        toastState.show("Missing job id for export", com.truvision.app.ui.common.ToastType.ERROR)
+                                    }
                                 },
                                 onClick = {
                                     navController.navigate("results/${sample.jobId}")
