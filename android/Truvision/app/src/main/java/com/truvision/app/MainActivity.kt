@@ -931,11 +931,13 @@ fun FilterChip(text: String, modifier: Modifier = Modifier) {
 fun SettingsScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val overridePrefs = remember { com.truvision.app.connectivity.OverridePreferences(context) }
+    val gpsPrefs = remember { com.truvision.app.connectivity.GpsPreferences(context) }
     val connectionViewModel: ConnectionViewModel = viewModel()
     val connectionState by connectionViewModel.connectionState.collectAsState()
     
     var isOverrideEnabled by remember { mutableStateOf(overridePrefs.isOverrideEnabled()) }
     var overrideUrl by remember { mutableStateOf(overridePrefs.getOverrideUrl()) }
+    var isGpsTaggingEnabled by remember { mutableStateOf(gpsPrefs.isGpsTaggingEnabled()) }
 
     Column(
         modifier = Modifier
@@ -960,6 +962,28 @@ fun SettingsScreen() {
                 onCheckedChange = { enabled ->
                     isOverrideEnabled = enabled
                     overridePrefs.setOverrideEnabled(enabled)
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("GPS Tagging", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = "Save location with captures when enabled",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = isGpsTaggingEnabled,
+                onCheckedChange = { enabled ->
+                    isGpsTaggingEnabled = enabled
+                    gpsPrefs.setGpsTaggingEnabled(enabled)
                 }
             )
         }

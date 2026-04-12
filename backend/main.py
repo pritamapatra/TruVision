@@ -65,8 +65,8 @@ async def start_capture(
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO samples (job_id, status, timestamp, created_at, latitude, longitude, accuracy, location_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (job_id, "pending", datetime.now().isoformat(), datetime.now().isoformat(), latitude, longitude, accuracy, location_method)
+        "INSERT INTO samples (job_id, status, timestamp, created_at) VALUES (?, ?, ?, ?)",
+        (job_id, "pending", datetime.now().isoformat(), datetime.now().isoformat())
     )
     conn.commit()
     conn.close()
@@ -92,7 +92,7 @@ async def process_job(job_id: str):
     if not result.get('success'):
         print(f"[Job {job_id}] Camera failed, using fallback test image...")
         import shutil
-        test_image = Path("test_yolo_microplastic_sample.jpg")
+        test_image = Path("testyolo/microplasticsample.png")
         if test_image.exists():
             shutil.copy(test_image, image_path)
             print(f"[Job {job_id}] Fallback image copied - continuing with detection")
